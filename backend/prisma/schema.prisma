@@ -1,0 +1,621 @@
+// ================================================================
+// PC HUB 2.0 — Prisma Schema
+// PostgreSQL · Enterprise · Audit-first
+// ================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm, unaccent]
+}
+
+enum OppStatus {
+  Lead
+  Probable
+  StrongProbable
+  Contracted
+  WorkStarted
+  Completed
+  @@map("opp_status")
+}
+
+enum SrpStatus {
+  Draft
+  SentForApproval
+  Approved
+  Rejected
+  @@map("srp_status")
+}
+
+enum InvoiceStatus {
+  Draft
+  Pending
+  Paid
+  Overdue
+  Cancelled
+  @@map("invoice_status")
+}
+
+enum CeStage {
+  Assessment
+  Submitted
+  Reviewed
+  Approved
+  Rejected
+  @@map("ce_stage")
+}
+
+enum DelegationType {
+  Full
+  Workflow
+  ApprovalOnly
+  ReadOnly
+  @@map("delegation_type")
+}
+
+enum DelegationStatus {
+  Pending
+  Active
+  Expired
+  Revoked
+  @@map("delegation_status")
+}
+
+enum AuditAction {
+  Create
+  Update
+  Delete
+  Approve
+  Reject
+  Login
+  Logout
+  Export
+  System
+  @@map("audit_action")
+}
+
+enum NotifType {
+  SrpApproval
+  CeStatus
+  SupplierInvoice
+  OverdueAction
+  Delegation
+  FeeApproval
+  System
+  @@map("notif_type")
+}
+
+enum NotifPriority {
+  Low
+  Medium
+  High
+  Critical
+  @@map("notif_priority")
+}
+
+enum SupplierStatus {
+  Approved
+  UnderReview
+  Expired
+  Suspended
+  @@map("supplier_status")
+}
+
+enum UserStatus {
+  Active
+  Inactive
+  Pending
+  @@map("user_status")
+}
+
+model User {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId    String?    @unique @map("external_id")
+  name          String
+  email         String     @unique
+  initials      String     @db.VarChar(4)
+  avatarColor   String?    @map("avatar_color") @db.VarChar(7)
+  status        UserStatus @default(Pending)
+  region        String?
+  businessUnit  String?    @map("business_unit")
+  reportingMgr  String?    @map("reporting_mgr") @db.Uuid
+  lastLoginAt   DateTime?  @map("last_login_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  roles             UserRole[]
+  opportunities     Opportunity[]   @relation("LeadOpps")
+  auditLogs         AuditLog[]
+  proxyLogs         AuditLog[]      @relation("ProxyLogs")
+  notifications     Notification[]
+  delegationsFrom   Delegation[]    @relation("DelegationFrom")
+  delegationsTo     Delegation[]    @relation("DelegationTo")
+  delegationsCreated Delegation[]   @relation("DelegationCreatedBy")
+  userRolesGranted  UserRole[]      @relation("GrantedBy")
+
+  @@index([email])
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String  @unique
+  description String?
+  color       String? @db.VarChar(7)
+  icon        String? @db.VarChar(10)
+  isSystem    Boolean @default(false) @map("is_system")
+  isActive    Boolean @default(true)  @map("is_active")
+  permissions Json    @default("{}")
+  sortOrder   Int     @default(0)     @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  users UserRole[]
+
+  @@index([isActive])
+  @@map("roles")
+}
+
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at")
+  grantedBy String?  @map("granted_by") @db.Uuid
+
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  granter  User? @relation("GrantedBy", fields: [grantedBy], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Opportunity {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  commNum      String    @unique @map("comm_num") @db.VarChar(20)
+  name         String
+  clientName   String    @map("client_name")
+  leadId       String?   @map("lead_id") @db.Uuid
+  sector       String?
+  region       String?
+  status       OppStatus @default(Lead)
+  stagePercent Int       @default(20) @map("stage_percent")
+  value        Decimal   @default(0)  @db.Decimal(15, 2)
+  services     String[]
+  srpStatus    SrpStatus @default(Draft) @map("srp_status")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt      @map("updated_at")
+  // FTS vector managed by database trigger
+  searchVec    Unsupported("tsvector")? @map("search_vec")
+
+  lead             User?             @relation("LeadOpps", fields: [leadId], references: [id])
+  srp              Srp?
+  feeCalculator    FeeCalculator?
+  ceEvents         CeEvent[]
+  projectPi        ProjectPi?
+  invoiceSchedules InvoiceSchedule[]
+  surveys          Survey[]
+  auditLogs        AuditLog[]
+  versions         EntityVersion[]
+
+  @@index([status])
+  @@index([leadId])
+  @@index([commNum])
+  @@index([srpStatus])
+  @@index([createdAt(sort: Desc)])
+  @@map("opportunities")
+}
+
+model Srp {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId           String    @unique @map("opportunity_id") @db.Uuid
+  status                  SrpStatus @default(Draft)
+  clientContactName       String?   @map("client_contact_name")
+  clientContactEmail      String?   @map("client_contact_email")
+  clientContactTel        String?   @map("client_contact_tel")
+  clientContactPosition   String?   @map("client_contact_position")
+  commissionLead          String?   @map("commission_lead")
+  commissionLeadEmail     String?   @map("commission_lead_email")
+  commissionLeadMobile    String?   @map("commission_lead_mobile")
+  serviceManager          String?   @map("service_manager")
+  commissionDesc          String?   @map("commission_desc")
+  commissionPostCode      String?   @map("commission_post_code")
+  mainContractType        String?   @map("main_contract_type")
+  startDate               DateTime? @map("start_date") @db.Date
+  endDate                 DateTime? @map("end_date") @db.Date
+  confidentialityFlag     String    @default("No") @map("confidentiality_flag")
+  hasProgramme            String    @default("No") @map("has_programme")
+  hasProjectBrief         String    @default("No") @map("has_project_brief")
+  hasSchemeLayout         String    @default("No") @map("has_scheme_layout")
+  hasProgrammeComment     String?   @map("has_programme_comment")
+  hasProjectBriefComment  String?   @map("has_project_brief_comment")
+  hasSchemeLayoutComment  String?   @map("has_scheme_layout_comment")
+  clientProposedOrg       String    @default("No") @map("client_proposed_org")
+  clientProposedOrgComment String? @map("client_proposed_org_comment")
+  clientSpecificVfmDriver String?   @map("client_specific_vfm_driver")
+  preEngagementRequired   String    @default("No") @map("pre_engagement_required")
+  preEngagementItems      Json      @default("{}") @map("pre_engagement_items")
+  projectOverview         String?   @map("project_overview")
+  objectives              String?
+  healthSafety            String?   @map("health_safety")
+  vfmStatement            String?   @map("vfm_statement")
+  vfmDriver1              String?   @map("vfm_driver1")
+  vfmDriver2              String?   @map("vfm_driver2")
+  vfmDriver3              String?   @map("vfm_driver3")
+  projectSuccessCriteria  String?   @map("project_success_criteria")
+  socialValue             String?   @map("social_value")
+  tomsRows                Json      @default("[]") @map("toms_rows")
+  s61                     String?
+  s62                     String?
+  s63                     String?
+  s65                     String?
+  s66                     String?
+  s70                     String?
+  s90                     String?
+  s100                    String?
+  s110                    String?
+  s120                    String?
+  s130                    String?
+  s140                    String?
+  s150                    String?
+  nonCoreServices         Json      @default("[]") @map("non_core_services")
+  scopeSelections         Json      @default("{}") @map("scope_selections")
+  uploadOwnProgramme      String    @default("No") @map("upload_own_programme")
+  deliveryRows            Json      @default("[]") @map("delivery_rows")
+  selectedContractDesc    String?   @map("selected_contract_desc")
+  srpDeliveryMethod       String?   @map("srp_delivery_method")
+  commercialLead          String?   @map("commercial_lead")
+  approvalComments        String?   @map("approval_comments")
+  approvedAt              DateTime? @map("approved_at")
+  approvedBy              String?   @map("approved_by")
+  sentForApprovalAt       DateTime? @map("sent_for_approval_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt      @map("updated_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("srps")
+}
+
+model FeeCalculator {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId       String   @unique @map("opportunity_id") @db.Uuid
+  inputDate           DateTime? @map("input_date") @db.Date
+  constructionValue   Decimal  @default(0)  @map("construction_value") @db.Decimal(15,2)
+  preContractWeeks    Int      @default(0)  @map("pre_contract_weeks")
+  postContractWeeks   Int      @default(0)  @map("post_contract_weeks")
+  procRoute           String   @default("Design & Build – 1 stage") @map("proc_route")
+  overridePscPct      Decimal  @default(0)  @map("override_psc_pct") @db.Decimal(6,3)
+  contractLead        String?  @map("contract_lead")
+  supervisor          String?
+  bim                 String   @default("Standard (no IM)")
+  nec3OptionG         Boolean  @default(false) @map("nec3_option_g")
+  necContractForm     String?  @map("nec_contract_form")
+  necOption           String?  @map("nec_option")
+  inflationRequired   String   @default("No") @map("inflation_required")
+  inflationApplied    String   @default("Outset") @map("inflation_applied")
+  selectedServices    Json     @default("[]") @map("selected_services")
+  secondaryServices   Json     @default("[]") @map("secondary_services")
+  nonCoreServices     Json     @default("[]") @map("non_core_services")
+  timeCharges         Json     @default("[]") @map("time_charges")
+  nonSfr              Json     @default("[]") @map("non_sfr")
+  disbursements       Json     @default("[]")
+  ceList              Json     @default("[]") @map("ce_list")
+  nextCeNum           Int      @default(1)  @map("next_ce_num")
+  totalPrimeCore      Decimal  @default(0)  @map("total_prime_core") @db.Decimal(15,2)
+  totalCore           Decimal  @default(0)  @map("total_core") @db.Decimal(15,2)
+  totalTimeCharges    Decimal  @default(0)  @map("total_time_charges") @db.Decimal(15,2)
+  totalExtConsultancy Decimal  @default(0)  @map("total_ext_consultancy") @db.Decimal(15,2)
+  totalDisbursements  Decimal  @default(0)  @map("total_disbursements") @db.Decimal(15,2)
+  pscFee              Decimal  @default(0)  @map("psc_fee") @db.Decimal(15,2)
+  grandTotal          Decimal  @default(0)  @map("grand_total") @db.Decimal(15,2)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@map("fee_calculators")
+}
+
+model InvoiceSchedule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId  String   @map("opportunity_id") @db.Uuid
+  milestone      String
+  dueDate        DateTime @map("due_date") @db.Date
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  opportunity      Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  clientInvoices   ClientInvoice[]
+  supplierInvoices SupplierInvoice[]
+
+  @@index([opportunityId])
+  @@index([dueDate])
+  @@map("invoice_schedules")
+}
+
+model ClientInvoice {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceScheduleId  String        @map("invoice_schedule_id") @db.Uuid
+  invoiceRef         String        @unique @map("invoice_ref") @db.VarChar(30)
+  netAmount          Decimal       @map("net_amount") @db.Decimal(15,2)
+  vatRate            Decimal       @default(20) @map("vat_rate") @db.Decimal(5,2)
+  vatAmount          Decimal       @map("vat_amount") @db.Decimal(15,2)
+  totalAmount        Decimal       @map("total_amount") @db.Decimal(15,2)
+  status             InvoiceStatus @default(Pending)
+  issuedAt           DateTime?     @map("issued_at") @db.Date
+  paidAt             DateTime?     @map("paid_at") @db.Date
+  paymentTerms       Int           @default(30) @map("payment_terms")
+  notes              String?
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt      @map("updated_at")
+
+  schedule InvoiceSchedule @relation(fields: [invoiceScheduleId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([invoiceScheduleId])
+  @@map("client_invoices")
+}
+
+model Supplier {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  type       String
+  contact    String?
+  email      String?
+  phone      String?
+  status     SupplierStatus @default(UnderReview)
+  certExpiry DateTime?      @map("cert_expiry") @db.Date
+  tags       String[]
+  notes      String?
+  metadata   Json           @default("{}")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt      @map("updated_at")
+
+  supplierInvoices SupplierInvoice[]
+  surveys          Survey[]
+
+  @@index([status])
+  @@index([certExpiry])
+  @@map("suppliers")
+}
+
+model SupplierInvoice {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceScheduleId  String        @map("invoice_schedule_id") @db.Uuid
+  supplierId         String?       @map("supplier_id") @db.Uuid
+  invoiceRef         String        @unique @map("invoice_ref") @db.VarChar(30)
+  supplierName       String        @map("supplier_name")
+  netAmount          Decimal       @map("net_amount") @db.Decimal(15,2)
+  vatAmount          Decimal       @map("vat_amount") @db.Decimal(15,2)
+  totalAmount        Decimal       @map("total_amount") @db.Decimal(15,2)
+  status             InvoiceStatus @default(Pending)
+  receivedAt         DateTime?     @map("received_at") @db.Date
+  paidAt             DateTime?     @map("paid_at") @db.Date
+  notes              String?
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt      @map("updated_at")
+
+  schedule InvoiceSchedule @relation(fields: [invoiceScheduleId], references: [id], onDelete: Cascade)
+  supplier Supplier?       @relation(fields: [supplierId], references: [id])
+
+  @@index([status])
+  @@index([supplierId])
+  @@map("supplier_invoices")
+}
+
+model CeEvent {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId String  @map("opportunity_id") @db.Uuid
+  ceRef         String  @map("ce_ref") @db.VarChar(20)
+  description   String
+  stage         CeStage @default(Assessment)
+  value         Decimal @default(0) @db.Decimal(15,2)
+  raisedAt      DateTime @default(now()) @map("raised_at") @db.Date
+  raisedBy      String?  @map("raised_by")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt      @map("updated_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@index([stage])
+  @@map("ce_events")
+}
+
+model ProjectPi {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId String    @unique @map("opportunity_id") @db.Uuid
+  status        String    @default("Not Started")
+  version       Int       @default(1)
+  approver      String?
+  approvedAt    DateTime? @map("approved_at")
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt      @map("updated_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@map("project_pis")
+}
+
+model Survey {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId String    @map("opportunity_id") @db.Uuid
+  type          String
+  supplierId    String?   @map("supplier_id") @db.Uuid
+  sentAt        DateTime? @map("sent_at")
+  deadline      DateTime? @db.Date
+  submittedAt   DateTime? @map("submitted_at")
+  satisfaction  Int?
+  nps           Int?
+  responses     Json      @default("{}")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt      @map("updated_at")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  supplier    Supplier?   @relation(fields: [supplierId], references: [id])
+
+  @@index([opportunityId])
+  @@index([type])
+  @@map("surveys")
+}
+
+model Delegation {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fromUserId    String           @map("from_user_id") @db.Uuid
+  toUserId      String           @map("to_user_id") @db.Uuid
+  type          DelegationType
+  scope         String
+  status        DelegationStatus @default(Pending)
+  approvalLimit Decimal?         @map("approval_limit") @db.Decimal(15,2)
+  startDate     DateTime         @map("start_date") @db.Date
+  endDate       DateTime         @map("end_date") @db.Date
+  createdById   String           @map("created_by_id") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt      @map("updated_at")
+  revokedAt     DateTime?        @map("revoked_at")
+
+  fromUser  User @relation("DelegationFrom", fields: [fromUserId], references: [id])
+  toUser    User @relation("DelegationTo", fields: [toUserId], references: [id])
+  createdBy User @relation("DelegationCreatedBy", fields: [createdById], references: [id])
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([status])
+  @@index([endDate])
+  @@map("delegations")
+}
+
+model MasterLookup {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category  String   @db.VarChar(60)
+  code      String?  @db.VarChar(20)
+  label     String
+  metadata  Json     @default("{}")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@unique([category, code])
+  @@index([category, isActive])
+  @@map("master_lookups")
+}
+
+model StaffGrade {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grade     String   @unique
+  rate      Decimal  @db.Decimal(10,2)
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0)    @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("staff_grades")
+}
+
+model PeopleBandRate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rateId    String   @unique @map("rate_id") @db.VarChar(20)
+  dateFrom  DateTime @map("date_from") @db.Date
+  dateTo    DateTime @map("date_to") @db.Date
+  status    String
+  grades    Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([status])
+  @@map("people_band_rates")
+}
+
+model Notification {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String        @map("user_id") @db.Uuid
+  type       NotifType
+  priority   NotifPriority @default(Medium)
+  title      String
+  body       String?
+  entityType String?       @map("entity_type")
+  entityId   String?       @map("entity_id") @db.Uuid
+  isRead     Boolean       @default(false) @map("is_read")
+  readAt     DateTime?     @map("read_at")
+  metadata   Json          @default("{}")
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  action        AuditAction
+  entityType    String      @map("entity_type") @db.VarChar(60)
+  entityId      String?     @map("entity_id") @db.Uuid
+  opportunityId String?     @map("opportunity_id") @db.Uuid
+  userId        String?     @map("user_id") @db.Uuid
+  proxyUserId   String?     @map("proxy_user_id") @db.Uuid
+  isProxy       Boolean     @default(false) @map("is_proxy")
+  isSystem      Boolean     @default(false) @map("is_system")
+  description   String
+  beforeVal     Json?       @map("before_val")
+  afterVal      Json?       @map("after_val")
+  comments      String?
+  ipAddress     String?     @map("ip_address") @db.VarChar(45)
+  userAgent     String?     @map("user_agent")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  user        User?        @relation(fields: [userId], references: [id])
+  proxyUser   User?        @relation("ProxyLogs", fields: [proxyUserId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([opportunityId, createdAt(sort: Desc)])
+  @@index([action])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model EntityVersion {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType    String   @map("entity_type") @db.VarChar(60)
+  entityId      String   @map("entity_id") @db.Uuid
+  opportunityId String?  @map("opportunity_id") @db.Uuid
+  version       Int
+  snapshot      Json
+  changedBy     String?  @map("changed_by")
+  changeSummary String?  @map("change_summary")
+  diff          Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@unique([entityType, entityId, version])
+  @@index([entityType, entityId])
+  @@index([opportunityId])
+  @@map("entity_versions")
+}
+
+model NotificationSetting {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  eventKey  String   @map("event_key") @db.VarChar(60)
+  enabled   Boolean  @default(true)
+  digest    String   @default("Immediate")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, eventKey])
+  @@map("notification_settings")
+}

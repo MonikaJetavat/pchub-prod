@@ -1,0 +1,990 @@
+﻿<!-- SRP Form — aligned to pchub_v16g.html prototype -->
+<div class="srp-shell">
+
+  <!-- Mobile nav toggle (hidden on desktop) -->
+  <button class="srp-nav-mobile-toggle" (click)="navOpen = !navOpen"
+    [attr.aria-expanded]="navOpen" aria-label="Toggle section navigation">
+    &#9776;&ensp;Sections
+  </button>
+
+  <!-- Loading state -->
+  <div *ngIf="!srp" class="srp-loading">Loading SRP data&hellip;</div>
+
+  <!-- Main layout -->
+  <div class="srp-stepper-shell" *ngIf="srp" role="region" aria-label="Service Request Proposal">
+
+    <!-- ── LEFT: sticky nav sidebar ──────────────────────────── -->
+    <aside class="srp-nav-sidebar" [class.srp-nav-open]="navOpen" aria-label="SRP section navigator">
+      <div class="srp-nav-header">
+        <div class="srp-nav-title">SRP Navigator</div>
+        <div class="srp-nav-subtitle">{{ opp?.commNum }} &ndash; {{ (opp?.name || '').slice(0, 22) }}{{ (opp?.name || '').length > 22 ? '&hellip;' : '' }}</div>
+      </div>
+
+      <nav aria-label="SRP sections">
+        <ul class="srp-nav-list" role="list">
+          <li *ngFor="let sec of navSections"
+            class="srp-nav-item"
+            [class.srp-nav-done]="isSectionDone(sec.id)"
+            [id]="'srp-navitem-' + sec.id"
+            [attr.data-srp-nav]="sec.id">
+            <div class="srp-nav-line" aria-hidden="true"></div>
+            <button class="srp-nav-btn" (click)="navJump(sec.id)"
+              [attr.aria-label]="(isSectionDone(sec.id) ? 'Complete – ' : '') + sec.label">
+              <span class="srp-nav-step" aria-hidden="true">{{ isSectionDone(sec.id) ? '✓' : sec.num }}</span>
+              <span class="srp-nav-label">
+                <span class="srp-nav-label-num">Section {{ sec.num }}</span>
+                <span class="srp-nav-label-text">{{ sec.label }}</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="srp-nav-footer">
+        <div class="srp-nav-progress-label">
+          <span>Completion</span><span>{{ doneCount }}/{{ navSections.length }} sections</span>
+        </div>
+        <div class="srp-nav-progress-track" role="progressbar"
+          [attr.aria-valuenow]="progressPct" aria-valuemin="0" aria-valuemax="100"
+          [attr.aria-label]="'Form completion ' + progressPct + '%'">
+          <div class="srp-nav-progress-fill" [style.width.%]="progressPct"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── RIGHT: content panel ──────────────────────────────── -->
+    <div class="srp-stepper-content">
+
+      <!-- Sticky status / action bar -->
+      <div class="srp-stepper-statusbar">
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11.5px;font-weight:700;color:#64748b">SRP Status:</span>
+          <span class="badge" [class]="statusBadge">{{ statusLabel }}</span>
+          <span *ngIf="srp.status==='Approved'" style="font-size:11px;color:#64748b">
+            Approved {{ srp.approvedAt | date:'dd MMM yyyy' }}
+          </span>
+          <span *ngIf="!mandatoryComplete" class="srp-val-warn">
+            &#9888; {{ missingCount }} mandatory field{{ missingCount !== 1 ? 's' : '' }} incomplete
+          </span>
+          <span *ngIf="mandatoryComplete" class="srp-val-ok">&#10003; Ready for approval</span>
+        </div>
+        <span class="save-indicator" [class.show]="saved">&#10003; Saved</span>
+        <button class="btn btn-ghost btn-sm" (click)="saveDraft()">&#128190; Save Draft</button>
+        <button class="btn btn-primary btn-sm"
+          *ngIf="srp.status === 'Draft'"
+          [disabled]="!mandatoryComplete"
+          [title]="!mandatoryComplete ? 'Complete mandatory fields first' : ''"
+          (click)="sendForApproval()">&#128228; Send for Approval</button>
+        <button class="btn btn-success btn-sm" *ngIf="srp.status === 'SentForApproval'" (click)="approve()">&#10003; Approve</button>
+        <button class="btn btn-danger btn-sm"  *ngIf="srp.status === 'SentForApproval'" (click)="reject()">&#10007; Reject</button>
+        <button class="btn btn-ghost btn-sm" (click)="printSRP()">&#128424; Print</button>
+        <button class="srp-ai-btn" title="AI Suggestions">&#10022; AI Suggestions</button>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           PART A — Outline Service Requirements
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('partA')"
+        [class.srp-card-done]="isSectionDone('partA')"
+        id="srp-card-partA" data-srp-section="partA">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('partA')"
+          [attr.aria-expanded]="isCardOpen('partA')" aria-controls="srp-cardbody-partA">
+          <span class="srp-stepper-card-num">{{ isSectionDone('partA') ? '✓' : 'A' }}</span>
+          <span class="srp-stepper-card-title">Part A &mdash; Outline Service Requirements</span>
+          <span class="srp-stepper-card-done-chip">&#10003; Done</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-partA" role="region">
+          <div class="srp-field-grid">
+            <!-- Row 1: Commission No / Client Name -->
+            <div class="srp-row">
+              <div class="srp-label">Commission No</div>
+              <div class="srp-value srp-readonly">{{ opp?.commNum }}</div>
+              <div class="srp-label">Client Name</div>
+              <div class="srp-value srp-readonly">{{ opp?.clientName }}</div>
+            </div>
+            <!-- Row 2: Client Contact Name / Lead Partner -->
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Client Contact Name ✱</div>
+              <div class="srp-value">
+                <input class="srp-input" [(ngModel)]="srp.clientContactName" placeholder="Enter client contact name" (ngModelChange)="autoSave()">
+              </div>
+              <div class="srp-label">Lead Partner &ndash; Company Name</div>
+              <div class="srp-value srp-readonly">Perfect Circle</div>
+            </div>
+            <!-- Row 3: Client Email / Commission Lead Name -->
+            <div class="srp-row">
+              <div class="srp-label">Client Contact Email</div>
+              <div class="srp-value">
+                <!-- CSV: eventBlur=ValidateEmail(email,'email1'); not required -->
+                <input class="srp-input" type="email" [(ngModel)]="srp.clientContactEmail"
+                  placeholder="email@example.com"
+                  (ngModelChange)="autoSave()"
+                  (blur)="validateEmail(srp.clientContactEmail,'email1')">
+                <span *ngIf="emailErrors['email1']" class="srp-field-error">&#9888; Invalid email address</span>
+              </div>
+              <div class="srp-label srp-mand">Commission Lead Contact Name ✱</div>
+              <div class="srp-value">
+                <input class="srp-input" [(ngModel)]="srp.commissionLead" (ngModelChange)="autoSave()">
+              </div>
+            </div>
+            <!-- Row 4: Client Tel / Commission Lead Email -->
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Client Contact Telephone ✱</div>
+              <div class="srp-value">
+                <!-- CSV: required=true, maxlength=50 -->
+                <input class="srp-input" [(ngModel)]="srp.clientContactTel" maxlength="50"
+                  placeholder="Max 50 chars" (ngModelChange)="autoSave()">
+                <span class="srp-char-count">{{ charsLeft(srp.clientContactTel, 50) }} left</span>
+              </div>
+              <div class="srp-label srp-mand">Commission Lead Contact Email ✱</div>
+              <div class="srp-value">
+                <!-- CSV: required=true, maxlength=200, eventBlur=ValidateEmail(email,'email2') -->
+                <input class="srp-input" type="email" [(ngModel)]="srp.commissionLeadEmail"
+                  maxlength="200" placeholder="email@example.com"
+                  (ngModelChange)="autoSave()"
+                  (blur)="validateEmail(srp.commissionLeadEmail,'email2')">
+                <span *ngIf="emailErrors['email2']" class="srp-field-error">&#9888; Invalid email address</span>
+                <span class="srp-char-count">{{ charsLeft(srp.commissionLeadEmail, 200) }} left</span>
+              </div>
+            </div>
+            <!-- Row 5: Client Position / Lead Mobile -->
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Client Contact Position ✱</div>
+              <div class="srp-value">
+                <input class="srp-input" [(ngModel)]="srp.clientContactPosition" placeholder="Role / position" (ngModelChange)="autoSave()">
+              </div>
+              <div class="srp-label srp-mand">Commission Lead Contact Mobile ✱</div>
+              <div class="srp-value">
+                <!-- CSV: required=true, maxlength=50 -->
+                <input class="srp-input" [(ngModel)]="srp.commissionLeadMobile" maxlength="50" (ngModelChange)="autoSave()">
+                <span class="srp-char-count">{{ charsLeft(srp.commissionLeadMobile, 50) }} left</span>
+              </div>
+            </div>
+            <!-- Row 6: Commission Name / Service Manager -->
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Commission Name (Title) ✱</div>
+              <div class="srp-value">
+                <input class="srp-input" [value]="opp?.name || ''" readonly style="background:#f5f7fb;color:#64748b">
+              </div>
+              <div class="srp-label srp-mand">Lead Partner Service Manager ✱</div>
+              <div class="srp-value">
+                <input class="srp-input" [(ngModel)]="srp.serviceManager" (ngModelChange)="autoSave()">
+              </div>
+            </div>
+            <!-- Row 7: Commission Description (full width) -->
+            <div class="srp-row srp-row-full">
+              <div class="srp-label srp-mand">Commission Description ✱</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: required=true -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.commissionDesc"
+                  placeholder="Brief description of the commission..." (ngModelChange)="autoSave()"></textarea>
+              </div>
+            </div>
+            <!-- Row 8: Post Code / Region -->
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Commission Post Code ✱</div>
+              <div class="srp-value">
+                <input class="srp-input" [(ngModel)]="srp.commissionPostCode" (ngModelChange)="autoSave()">
+              </div>
+              <div class="srp-label">Commission Region</div>
+              <div class="srp-value srp-readonly">{{ opp?.region || 'England' }}</div>
+            </div>
+            <!-- Row 9: Contract Type / Start Date -->
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Main Contract Type ✱</div>
+              <div class="srp-value">
+                <select class="srp-select" [(ngModel)]="srp.mainContractType" (ngModelChange)="autoSave()">
+                  <option value="">Please Select</option>
+                  <option *ngFor="let c of contractTypes" [value]="c">{{ c }}</option>
+                </select>
+              </div>
+              <div class="srp-label">Client Anticipated Start Date</div>
+              <div class="srp-value">
+                <input class="srp-input" type="date" [(ngModel)]="srp.startDate" (ngModelChange)="autoSave()">
+              </div>
+            </div>
+            <!-- Row 10: End Date / Confidentiality -->
+            <div class="srp-row">
+              <div class="srp-label">Client Anticipated End Date</div>
+              <div class="srp-value">
+                <input class="srp-input" type="date" [(ngModel)]="srp.endDate" (ngModelChange)="autoSave()">
+              </div>
+              <div class="srp-label">Confidentiality Flag</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.confidentialityFlag==='Yes'" (click)="srp.confidentialityFlag='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.confidentialityFlag==='No'"  (click)="srp.confidentialityFlag='No';autoSave()">No</button>
+                </div>
+              </div>
+            </div>
+            <!-- Row 11: Programme / Project Brief -->
+            <div class="srp-row">
+              <div class="srp-label">Has a Client draft/outline programme been appended?</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.hasProgramme==='Yes'" (click)="srp.hasProgramme='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.hasProgramme==='No'"  (click)="srp.hasProgramme='No';srp.hasProgrammeComment='';autoSave()">No</button>
+                </div>
+              </div>
+              <div class="srp-label">Has a Client Project Brief been appended?</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.hasProjectBrief==='Yes'" (click)="srp.hasProjectBrief='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.hasProjectBrief==='No'"  (click)="srp.hasProjectBrief='No';srp.hasProjectBriefComment='';autoSave()">No</button>
+                </div>
+              </div>
+            </div>
+            <!-- CSV: Has_Client_Prog_Appended_Comment — required, maxlength=3000, visible when hasProgramme==='Yes' -->
+            <div class="srp-row srp-row-full" *ngIf="srp.hasProgramme === 'Yes'">
+              <div class="srp-label srp-mand">Programme Comment ✱</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.hasProgrammeComment"
+                  maxlength="3000" placeholder="Please provide details about the appended programme..."
+                  (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.hasProgrammeComment, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <!-- CSV: Has_Client_Proj_Brief_Appended_Comment — required, maxlength=3000, visible when hasProjectBrief==='Yes' -->
+            <div class="srp-row srp-row-full" *ngIf="srp.hasProjectBrief === 'Yes'">
+              <div class="srp-label srp-mand">Project Brief Comment ✱</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.hasProjectBriefComment"
+                  maxlength="3000" placeholder="Please provide details about the appended project brief..."
+                  (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.hasProjectBriefComment, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <!-- Row 12: Scheme Layout / Document Upload -->
+            <div class="srp-row">
+              <div class="srp-label">Has a Scheme Layout been appended?</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.hasSchemeLayout==='Yes'" (click)="srp.hasSchemeLayout='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.hasSchemeLayout==='No'"  (click)="srp.hasSchemeLayout='No';srp.hasSchemeLayoutComment='';autoSave()">No</button>
+                </div>
+              </div>
+              <div class="srp-label">Other Document Upload</div>
+              <div class="srp-value"><span class="srp-file-btn">&#128206; Click to select a file</span></div>
+            </div>
+            <!-- CSV: Has_Scheme_Layout_Appended_Comment — required, maxlength=3000, visible when hasSchemeLayout==='Yes' -->
+            <div class="srp-row srp-row-full" *ngIf="srp.hasSchemeLayout === 'Yes'">
+              <div class="srp-label srp-mand">Scheme Layout Comment ✱</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.hasSchemeLayoutComment"
+                  maxlength="3000" placeholder="Please provide details about the appended scheme layout..."
+                  (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.hasSchemeLayoutComment, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <!-- Row 13: Client Proposed Organisations
+                 CSV: Opportunity_Section.Client_Proposed_Org toggle
+                 CSV: Client_Proposed_Organisations_Comment — required, maxlength=3000,
+                      visible when clientProposedOrg==='Yes' -->
+            <div class="srp-row">
+              <div class="srp-label">Does the Client require appointment of Client Proposed Organisations?</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.clientProposedOrg==='Yes'"
+                    (click)="srp.clientProposedOrg='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.clientProposedOrg==='No'"
+                    (click)="srp.clientProposedOrg='No';srp.clientProposedOrgComment='';autoSave()">No</button>
+                </div>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full" *ngIf="srp.clientProposedOrg === 'Yes'">
+              <div class="srp-label srp-mand">Client Proposed Organisations — Details ✱</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.clientProposedOrgComment"
+                  maxlength="3000"
+                  placeholder="Please describe the client-proposed organisation(s) and the basis for appointment..."
+                  (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.clientProposedOrgComment, 3000) }} / 3000</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PART B — Pre-Engagement Activity Checklist
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('partB')"
+        id="srp-card-partB" data-srp-section="partB">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('partB')"
+          [attr.aria-expanded]="isCardOpen('partB')" aria-controls="srp-cardbody-partB">
+          <span class="srp-stepper-card-num">B</span>
+          <span class="srp-stepper-card-title">Part B &mdash; Pre-Engagement Activity Checklist</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-partB" role="region">
+          <div class="srp-field-grid">
+            <div class="srp-row">
+              <div class="srp-label">Are Pre-Engagement Matters required?</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.preEngagementRequired==='Yes'" (click)="srp.preEngagementRequired='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.preEngagementRequired==='No'"  (click)="srp.preEngagementRequired='No';autoSave()">No</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div *ngIf="srp.preEngagementRequired === 'Yes'">
+            <div class="srp-info-row" style="margin:8px 0 10px">
+              <a class="srp-link" href="#" (click)="$event.preventDefault()">
+                &#128196; Pre-Engagement VfM &amp; TOMS Questionnaire.docx
+              </a>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin-bottom:10px">
+              Download the Pre-Engagement activity checklist, Value for Money toolkit and TOMS prompt.
+            </p>
+            <div class="srp-checklist-row" *ngFor="let item of preEngItems; let i = index">
+              <div style="flex:1;font-size:12.5px">{{ item }}</div>
+              <div class="srp-yn" style="flex-shrink:0">
+                <button class="srp-yn-btn" [class.srp-yn-active]="srp.preEngagementItems[i]==='Yes'" (click)="srp.preEngagementItems[i]='Yes';autoSave()">Yes</button>
+                <button class="srp-yn-btn" [class.srp-yn-active]="srp.preEngagementItems[i]==='No'"  (click)="srp.preEngagementItems[i]='No';autoSave()">No</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PART C — Detailed Service Requirements
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('partC')"
+        [class.srp-card-done]="isSectionDone('partC')"
+        id="srp-card-partC" data-srp-section="partC">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('partC')"
+          [attr.aria-expanded]="isCardOpen('partC')" aria-controls="srp-cardbody-partC">
+          <span class="srp-stepper-card-num">{{ isSectionDone('partC') ? '✓' : 'C' }}</span>
+          <span class="srp-stepper-card-title">Part C &mdash; Detailed Service Requirements</span>
+          <span class="srp-stepper-card-done-chip">&#10003; Done</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-partC" role="region">
+          <div class="srp-field-grid">
+            <div class="srp-row srp-row-full">
+              <div class="srp-label srp-mand">1.1 Project Overview / Background ✱</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: required=true, maxlength=3000 -->
+                <textarea class="srp-textarea srp-textarea-lg" [(ngModel)]="srp.projectOverview"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.projectOverview, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">1.2 Objectives / Outcomes</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: maxlength=3000 -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.objectives"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.objectives, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">2.0 Health, Welfare, Safety, Environment &amp; Sustainability</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: maxlength=3000 -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.healthSafety"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.healthSafety, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">3.0 Value for Money Statement</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: maxlength=3000 -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.vfmStatement"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.vfmStatement, 3000) }} / 3000</span>
+              </div>
+            </div>
+          </div>
+          <div class="srp-fixed-text" style="margin:8px 0">
+            The client has selected the following Value Drivers that best match its organisation's key objectives for the successful delivery of the commission.
+          </div>
+          <div class="srp-field-grid">
+            <div class="srp-row">
+              <div class="srp-label">Value for Money Driver (1)</div>
+              <div class="srp-value"><input class="srp-input" [(ngModel)]="srp.vfmDriver1" placeholder="..." (ngModelChange)="autoSave()"></div>
+              <div class="srp-label">Value for Money Driver (2)</div>
+              <div class="srp-value"><input class="srp-input" [(ngModel)]="srp.vfmDriver2" placeholder="..." (ngModelChange)="autoSave()"></div>
+            </div>
+            <div class="srp-row">
+              <div class="srp-label">Value for Money Driver (3)</div>
+              <div class="srp-value"><input class="srp-input" [(ngModel)]="srp.vfmDriver3" placeholder="..." (ngModelChange)="autoSave()"></div>
+            </div>
+            <!-- CSV: Client_Specific_Value_For_Money_Driver — maxlength=500
+                 visibilityRule: any VfM driver === '12) Client specific Value for Money Driver'
+                 To select the client-specific driver, type or paste the value into any driver field above. -->
+            <div class="srp-row srp-row-full" *ngIf="isClientSpecificVfm">
+              <div class="srp-label">Client Specific Value for Money Driver</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.clientSpecificVfmDriver"
+                  maxlength="500"
+                  placeholder="Describe the client-specific value for money driver..."
+                  (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.clientSpecificVfmDriver, 500) }} / 500</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label srp-mand">4.0 Project Success Criteria ✱</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: required=true, maxlength=3000 -->
+                <textarea class="srp-textarea srp-textarea-lg" [(ngModel)]="srp.projectSuccessCriteria"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.projectSuccessCriteria, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">5.0 Social Value and Community Benefits</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: maxlength=3000 -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.socialValue"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.socialValue, 3000) }} / 3000</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Social Value fixed text -->
+          <div class="srp-fixed-text">
+            <p>'We recognise that we have a responsibility to the environment, the communities within which we work, our own people, our supply chain and society. Perfect Circle's governance is fully aligned with the Public Services Act 2012, Procurement Reform Act 2014 and the Wellbeing of Future Generations Act 2015 including the PPN updates to these Acts.</p>
+            <p>Social Value &amp; Community benefit is an integral part of Perfect Circle's approach and operations. Perfect Circle collect data in the following areas as part of our business-as-usual activities:</p>
+            <ul>
+              <li>Local spend on projects, reporting on spend within 20 miles of commissions</li>
+              <li>Small and Medium (SME) spend, targeting greater engagement of SME's in our supply chain &mdash; our target is to ensure a majority of supply chain spend is with SME suppliers</li>
+              <li>Fair payment, ensuring we pay our supply chain within 30 days of receipt of valid invoices</li>
+            </ul>
+            <p>In addition to these core areas of impact for every commission we undertake, we work with clients to identify additional benefit activities that we can support. All activities are captured through our PC Hub with integrated measures against each activity evidenced with the value add to the local community.'</p>
+            <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap">
+              <span>National TOMS Guide: <a class="srp-link" href="#" (click)="$event.preventDefault()">TOMs2022_Update_Guidance-FINAL.pdf</a></span>
+              <span>National TOMs: <a class="srp-link" href="#" (click)="$event.preventDefault()">National TOMs 2022 open-source spreadsheet.xlsm</a></span>
+            </div>
+          </div>
+
+          <!-- TOMS sub-section -->
+          <button class="srp-stepper-sub-hdr" [class.srp-stepper-sub-open]="isSubOpen('toms')" (click)="toggleSub('toms')">
+            TOMS Measures <span class="srp-stepper-sub-chevron">&#8964;</span>
+          </button>
+          <div class="srp-stepper-sub-body" *ngIf="isSubOpen('toms')">
+            <div style="overflow-x:auto">
+              <table class="srp-table">
+                <thead><tr>
+                  <th style="min-width:200px">NT Ref</th>
+                  <th style="min-width:140px">Comments</th>
+                  <th style="width:50px">Unit</th>
+                  <th style="width:90px">SV Proxy Value</th>
+                  <th style="width:100px">Target</th>
+                  <th style="width:90px">SV Add (£)</th>
+                </tr></thead>
+                <tbody>
+                  <tr *ngFor="let row of srp.tomsRows; let i = index">
+                    <td>
+                      <span *ngIf="i < 3" class="srp-readonly-inline">{{ row.ref }}</span>
+                      <select *ngIf="i >= 3" class="srp-select-sm" [(ngModel)]="row.ref" (ngModelChange)="autoSave()">
+                        <option value="Please Select">Please Select</option>
+                        <option *ngFor="let o of tomsOptions" [value]="o">{{ o }}</option>
+                      </select>
+                    </td>
+                    <td>
+                      <!-- CSV: tomsmeasure.NT_Ref_Comments — maxlength=500 -->
+                      <textarea class="srp-ta-sm" rows="2" [(ngModel)]="row.comments"
+                        maxlength="500" (ngModelChange)="autoSave()"></textarea>
+                    </td>
+                    <td><span class="srp-readonly-inline">{{ row.unit }}</span></td>
+                    <td><span class="srp-readonly-inline">{{ row.svProxy | number:'1.2-2' }}</span></td>
+                    <td>
+                      <!-- CSV: tomsmeasure.Target — required; eventChange calls calcTomsRow() which mirrors
+                           calculateSVAddvalue(tomsmeasure);calcSVTotalValue() from pc.service.request.proposal.js.
+                           Stores result in row.svAdd so it is persisted with tomsRows JSON. -->
+                      <input type="number" class="srp-input-sm" [(ngModel)]="row.target"
+                        step="0.01" min="0" (ngModelChange)="calcTomsRow(row); autoSave()">
+                    </td>
+                    <td class="srp-calc">{{ row.svAdd | number:'1.2-2' }}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="5" style="text-align:right;font-weight:700;padding:8px 10px">SV (£) Total</td>
+                    <td class="srp-calc" style="font-size:13px;font-weight:800;color:#16a34a">{{ tomsTotal | number:'1.2-2' }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           SECTION 6 — Detailed Scope of Services
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('sec6')"
+        id="srp-card-sec6" data-srp-section="sec6">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('sec6')"
+          [attr.aria-expanded]="isCardOpen('sec6')" aria-controls="srp-cardbody-sec6">
+          <span class="srp-stepper-card-num">6</span>
+          <span class="srp-stepper-card-title">6.0 Detailed Scope of Services</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-sec6" role="region">
+          <div class="srp-field-grid">
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">6.1 Description of the Services to be Provided</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: maxlength=3000 -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.s61" maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.s61, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">6.2 Service / Price Exclusions</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.s62" maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.s62, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">6.3 Key Stakeholders, Consultations and Interdependencies</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.s63" maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.s63, 3000) }} / 3000</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6.4 RIBA Stage Grid -->
+          <button class="srp-stepper-sub-hdr" [class.srp-stepper-sub-open]="isSubOpen('sec64')" (click)="toggleSub('sec64')">
+            6.4 Summary of Services at Each Project Stage <span class="srp-stepper-sub-chevron">&#8964;</span>
+          </button>
+          <div class="srp-stepper-sub-body" *ngIf="isSubOpen('sec64')">
+            <p class="srp-intro-text">The services and suppliers proposed for this project are summarised below, including the procurement route intended for each service.</p>
+            <div style="overflow-x:auto;margin-bottom:14px">
+              <table class="srp-table srp-riba-grid">
+                <thead>
+                  <tr>
+                    <th colspan="2" style="background:#2563eb;color:#fff;min-width:140px">Services Required</th>
+                    <th style="background:#2563eb;color:#fff">0: Project Definition</th>
+                    <th style="background:#2563eb;color:#fff">1: Feasibility*</th>
+                    <th style="background:#2563eb;color:#fff">2: Concept Design</th>
+                    <th style="background:#2563eb;color:#fff">3: Spatial Coord.</th>
+                    <th style="background:#2563eb;color:#fff">4: Technical Design</th>
+                    <th style="background:#2563eb;color:#fff">5: Construction</th>
+                    <th style="background:#2563eb;color:#fff">6: Handover</th>
+                    <th style="background:#2563eb;color:#fff">7: Use</th>
+                    <th style="background:#2563eb;color:#fff">Procurement Route</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="11" class="srp-sub-hdr">Prime Core &ndash; RIBA Stages (&#10003;)</td></tr>
+                  <tr *ngFor="let svc of (opp?.services || [])">
+                    <td style="font-weight:600;padding:5px 8px">{{ svc }}</td>
+                    <td><input class="srp-input-sm" [(ngModel)]="srp.scopeSelections[svc].supplier" placeholder="Supplier" style="min-width:100px" (ngModelChange)="autoSave()"></td>
+                    <td *ngFor="let stage of ribaStages" style="text-align:center">
+                      <select class="srp-select-xs" [(ngModel)]="srp.scopeSelections[svc].stages[stage]" (ngModelChange)="autoSave()">
+                        <option>&mdash;</option><option>Yes</option><option>No</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select class="srp-select-sm" [(ngModel)]="srp.scopeSelections[svc].procRoute" (ngModelChange)="autoSave()">
+                        <option *ngFor="let r of procRoutes" [value]="r">{{ r }}</option>
+                      </select>
+                    </td>
+                  </tr>
+                  <tr *ngIf="!(opp?.services?.length)">
+                    <td colspan="11" style="padding:8px;color:#94a3b8;font-size:12px">No services defined on the opportunity.</td>
+                  </tr>
+                  <tr><td colspan="11" class="srp-sub-hdr">Core &ndash; RIBA Stages (&#10003;)</td></tr>
+                  <tr>
+                    <td colspan="11" style="padding:0">
+                      <div style="background:#f8fafc;border-bottom:1px solid #e2e8f0;color:#0f172a;padding:5px 8px;font-weight:700;font-size:12px">Non Core Services</div>
+                      <table style="width:100%;border-collapse:collapse">
+                        <thead><tr style="background:var(--bg3)">
+                          <th style="padding:5px 8px;font-size:11px;text-align:left">Service</th>
+                          <th style="padding:5px 8px;font-size:11px">Supplier</th>
+                          <th *ngFor="let s of ribaStages" style="padding:5px 8px;font-size:11px;text-align:center">{{ s }}</th>
+                          <th style="padding:5px 8px;font-size:11px">Procurement Route</th>
+                        </tr></thead>
+                        <tbody>
+                          <tr><td colspan="11" style="padding:8px;color:#94a3b8;font-size:12px">No non-core services added. Add from the opportunity's services list.</td></tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p style="font-size:11.5px;font-style:italic;color:#64748b">* Use stages 0&ndash;1 for non-construction projects where only time charges are applicable</p>
+            <div style="margin-top:12px">
+              <p style="font-size:12px;font-weight:700;margin-bottom:6px">Supply Chain Procurement routes available through the framework:</p>
+              <table class="srp-table srp-legend" style="max-width:600px">
+                <tr *ngFor="let entry of procLegend">
+                  <td style="font-weight:700;white-space:nowrap;width:50px">{{ entry[0] }}</td>
+                  <td>{{ entry[1] }}</td>
+                </tr>
+              </table>
+            </div>
+            <div class="srp-cpo-notice">
+              <p style="font-weight:700;margin-bottom:6px">Clients should be aware that in order for Perfect Circle to engage Client Proposed Organisations you are acknowledging that:</p>
+              <ul style="padding-left:18px;font-size:12px">
+                <li>You requested that Perfect Circle appoint the proposed organisation(s).</li>
+                <li>You are aware that the fees of the proposed organisation(s) are not in line with the Framework Agreement but nonetheless you are content that these offer value for money.</li>
+                <li>You have undertaken your own technical, commercial, and legal due diligence for the appointment of the proposed organisation(s).</li>
+                <li>The appointment of a Client Proposed Organisation(s) shall only be permitted when other Services are procured through the Partner and/or its Preferred Partner(s). Sole appointment of a Client Proposed Organisation shall not be permitted unless otherwise agreed by Scape.</li>
+                <li>Perfect Circle's appointment of a Client Proposed Organisation(s) will be conditional on the supplier meeting our approval criteria (insurances/ISOs/H&amp;S etc).</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="srp-field-grid" style="margin-top:12px">
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">6.5 Sub-consultant Selection and Competitive Tender Award Criteria</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.s65" maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.s65, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">6.6 Appointment of Principal Designer</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea srp-textarea-lg" [(ngModel)]="srp.s66" maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.s66, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">7.0 Delivery Team</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp.s70" maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.s70, 3000) }} / 3000</span>
+              </div>
+            </div>
+            <div class="srp-row">
+              <div class="srp-label">Delivery Team &mdash; document upload</div>
+              <div class="srp-value"><span class="srp-file-btn">&#128206; Click to select a file</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           SECTION 8 — Delivery Programme
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('sec8')"
+        id="srp-card-sec8" data-srp-section="sec8">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('sec8')"
+          [attr.aria-expanded]="isCardOpen('sec8')" aria-controls="srp-cardbody-sec8">
+          <span class="srp-stepper-card-num">8</span>
+          <span class="srp-stepper-card-title">8.0 Delivery Programme</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-sec8" role="region">
+          <p class="srp-intro-text">Our proposed delivery programme is as follows:</p>
+          <div class="srp-field-grid">
+            <div class="srp-row">
+              <div class="srp-label">Would you like to upload your own Project Programme?</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.uploadOwnProgramme==='Yes'" (click)="srp.uploadOwnProgramme='Yes';autoSave()">Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.uploadOwnProgramme==='No'"  (click)="srp.uploadOwnProgramme='No';autoSave()">No</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#f1f5f9;color:#0f172a;padding:7px 12px;font-weight:700;font-size:12.5px;margin:10px 0 0;border-radius:6px 6px 0 0;border:1px solid #e2e8f0;border-bottom:none">
+            Delivery Programme Activity
+          </div>
+          <div style="padding:8px 0">
+            <button class="btn btn-primary btn-sm" (click)="addDeliveryRow()">+ Create New Delivery Activity</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="srp-table">
+              <thead><tr>
+                <th style="width:150px">Project Stage</th>
+                <th>Activity</th>
+                <th style="width:130px">Start Date</th>
+                <th style="width:130px">End Date</th>
+                <th style="width:36px"></th>
+              </tr></thead>
+              <tbody>
+                <tr *ngFor="let row of srp.deliveryRows; let i = index; trackBy:trkIdx">
+                  <td><input class="srp-input" [(ngModel)]="row.stage"     (ngModelChange)="autoSave()"></td>
+                  <td><input class="srp-input" [(ngModel)]="row.activity"  (ngModelChange)="autoSave()"></td>
+                  <td><input class="srp-input" type="date" [(ngModel)]="row.startDate" (ngModelChange)="autoSave()"></td>
+                  <td><input class="srp-input" type="date" [(ngModel)]="row.endDate"   (ngModelChange)="autoSave()"></td>
+                  <td><button class="srp-del-btn" (click)="removeDeliveryRow(i)" title="Remove row">&#10007;</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Extended scope sections 9–15 (CSV: maxlength=3000 each) -->
+          <div class="srp-field-grid" style="margin-top:16px">
+            <div class="srp-row srp-row-full" *ngFor="let sec of extendedScope">
+              <div class="srp-label">{{ sec.label }}</div>
+              <div class="srp-value srp-full">
+                <textarea class="srp-textarea" [(ngModel)]="srp[sec.key]"
+                  maxlength="3000" (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp[sec.key], 3000) }} / 3000</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           SECTION 16 — Fee
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('sec16')"
+        id="srp-card-sec16" data-srp-section="sec16">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('sec16')"
+          [attr.aria-expanded]="isCardOpen('sec16')" aria-controls="srp-cardbody-sec16">
+          <span class="srp-stepper-card-num">16</span>
+          <span class="srp-stepper-card-title">16.0 Fee</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-sec16" role="region">
+          <div class="srp-fixed-text">
+            <p>We need in all cases to:</p>
+            <p><strong>1. DEMONSTRATE THAT THE PROPOSED FEES HAVE BEEN BUILT UP IN COMPLIANCE WITH THE FRAMEWORK RULES AND RATES:</strong> the fee calculator does this for you.</p>
+            <p><strong>2. CLEARLY IDENTIFY DEPARTURES FROM THE STANDARD %'S AND FEE RATES:</strong> required for all changes no matter how minor. Examples that might be included in the table below include:</p>
+            <ol type="a" style="padding-left:20px;margin:6px 0">
+              <li>Material differences in construction programme duration from our benchmarked norms</li>
+              <li>'Star rates' for named individuals</li>
+              <li>The inclusion of exceptional or 'out of region' travel expenses</li>
+              <li>The use of Client Proposed Organisations using non-framework rates</li>
+            </ol>
+            <p style="font-style:italic">Evidence approval: we should detail these such that the client is explicitly aware of them and in approving this Service Request Form, is providing agreement of their acceptance (and therefore that they are getting value for money). Any further evidence should be uploaded in Part A of this Service Request.</p>
+          </div>
+          <p style="font-size:13px;font-weight:700;margin:12px 0 8px">Our total fee is summarised as follows:</p>
+          <table class="srp-fee-summary-tbl">
+            <tbody>
+              <tr><td>A &ndash; Charges for Prime Core Services RIBA Workstages 2&ndash;7 &pound;</td><td class="srp-calc">&pound;{{ fcPrimeCore | number:'1.2-2' }}</td></tr>
+              <tr><td>B &ndash; Charges for Core Services RIBA Workstages 2&ndash;7 &pound;</td><td class="srp-calc">&pound;{{ fcCore | number:'1.2-2' }}</td></tr>
+              <tr><td>C &ndash; Time Charges &pound;</td><td class="srp-calc">&pound;{{ fcTime | number:'1.2-2' }}</td></tr>
+              <tr class="srp-subtotal-row"><td>D &ndash; Sub Total: Charges for Prime Core, Core Services and Time Charges &pound;</td><td class="srp-calc">&pound;{{ (fcPrimeCore + fcCore + fcTime) | number:'1.2-2' }}</td></tr>
+              <tr><td>E &ndash; External Consultancy Commissions &pound;</td><td class="srp-calc">&pound;{{ fcExt | number:'1.2-2' }}</td></tr>
+              <tr class="srp-subtotal-row"><td>Total of Charges &pound;</td><td class="srp-calc">&pound;{{ fcSubDE | number:'1.2-2' }}</td></tr>
+              <tr><td>F &ndash; PSC / PSSC Fee &pound;</td><td class="srp-calc">&pound;{{ fcPSC | number:'1.2-2' }}</td></tr>
+              <tr class="srp-subtotal-row"><td>Total Commission Value &pound;</td><td class="srp-calc">&pound;{{ fcTotalCommission | number:'1.2-2' }}</td></tr>
+              <tr><td>G &ndash; Disbursements &pound;</td><td class="srp-calc">&pound;{{ fcDisb | number:'1.2-2' }}</td></tr>
+              <tr class="srp-total-row"><td>Overall Commission Value &pound;</td><td class="srp-calc">&pound;{{ fcOverall | number:'1.2-2' }}</td></tr>
+            </tbody>
+          </table>
+          <p class="srp-intro-text" style="margin-top:10px;font-size:11.5px;font-style:italic">These figures are exclusive of VAT. Fees are derived from the Fee Calculator. Please ensure the Fee Calculator is saved before submitting this SRP for approval.</p>
+
+          <!-- 16.2 sub-section -->
+          <button class="srp-stepper-sub-hdr" [class.srp-stepper-sub-open]="isSubOpen('sec162')" (click)="toggleSub('sec162')">
+            16.2 Time Charges by Discipline &amp; RIBA Stage <span class="srp-stepper-sub-chevron">&#8964;</span>
+          </button>
+          <div class="srp-stepper-sub-body" *ngIf="isSubOpen('sec162')">
+            <p class="srp-intro-text">Our Services are broken down across the RIBA Stages as follows. The detailed time charge matrix is maintained in the Fee Calculator module.</p>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;font-size:12.5px;color:#15803d;margin-bottom:14px">
+              &#10003; Fee Calculator linked &mdash; Grand Total: <strong>&pound;{{ fcGrand | number:'1.2-2' }}</strong>
+            </div>
+            <div class="srp-fixed-text" style="margin-top:0">
+              <p>This comprises of:</p>
+              <ol type="A" style="padding-left:20px">
+                <li>Where the commission relates to a Construction Project; Percentage charges for Prime Core services based on the estimated construction value.</li>
+                <li>Where the commission relates to a Construction Project; Percentage charges for Core services based on the estimated construction value.</li>
+                <li>Time charge fees covering Prime Core, Core and Non-core services, detailed in section 16.2 below.</li>
+                <li>Sub-total (A plus B plus C)</li>
+                <li>Prices secured from external suppliers, detailed in section 16.3 below.</li>
+              </ol>
+              <p style="margin-top:6px">Total of Charges (D plus E)</p>
+              <ol type="F" style="padding-left:20px" start="6">
+                <li>PSC / PSSC Fee</li>
+              </ol>
+              <p>Total Commission Value (D plus E plus F)</p>
+              <ol type="G" style="padding-left:20px" start="7">
+                <li>Disbursements &amp; Expenses</li>
+              </ol>
+              <p>Overall Commission Value (D plus E plus F plus G)</p>
+              <p style="margin-top:8px;font-style:italic">These figures are exclusive of VAT.</p>
+              <ol style="padding-left:20px;margin-top:6px">
+                <li>In preparing our fee we have followed the prescribed rules and tendered rates as defined in the Framework Agreement made between Scape Procure Limited and Perfect Circle JV Ltd dated 29th January 2021.</li>
+                <li>Please note that the People Rates are adjusted annually for inflation on the 5th January in accordance with the Indexation Table contained within the Agreement.</li>
+                <li>If the Client has elected to include Secondary Option X1 (Price Adjustment for Inflation) in the NEC Delivery Agreement, those Prices derived from People Rates will be subject to adjustment in line with the same inflation indexation provisions of the Framework.</li>
+                <li>Alternatively, if the Client has elected not to include Secondary Option X1, then an allowance for the risk of inflation will have been incorporated into the above 'Time Charges'.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           SECTION 17 — Delivery Agreement / PSC Model
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('sec17')"
+        id="srp-card-sec17" data-srp-section="sec17">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('sec17')"
+          [attr.aria-expanded]="isCardOpen('sec17')" aria-controls="srp-cardbody-sec17">
+          <span class="srp-stepper-card-num">17</span>
+          <span class="srp-stepper-card-title">17.0 Delivery Agreement / PSC Model</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-sec17" role="region">
+          <div style="display:flex;align-items:baseline;gap:16px;padding:8px 0 12px">
+            <span class="srp-intro-text" style="flex:1">A description of the contracting options available can be found in Appendix B. We are proposing that this appointment is placed using the following:</span>
+            <span class="srp-readonly-inline" style="white-space:nowrap;font-weight:600">{{ srp.mainContractType || '—' }}</span>
+          </div>
+
+          <!-- Appendix A sub-section -->
+          <button class="srp-stepper-sub-hdr" [class.srp-stepper-sub-open]="isSubOpen('appA')" (click)="toggleSub('appA')">
+            Appendix A &mdash; Scope of Services <span class="srp-stepper-sub-chevron">&#8964;</span>
+          </button>
+          <div class="srp-stepper-sub-body" *ngIf="isSubOpen('appA')">
+            <div class="srp-row" style="margin-bottom:10px">
+              <div class="srp-label">Additional Scope of Services</div>
+              <div class="srp-value"><span class="srp-file-btn">&#128206; Click to select a file</span></div>
+            </div>
+            <ng-container *ngFor="let svc of (opp?.services || [])">
+              <div class="srp-scope-service">
+                <button class="srp-scope-header" (click)="toggleScopeBody(svc)"
+                  [attr.aria-expanded]="isScopeBodyOpen(svc)">
+                  <input type="checkbox" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex-shrink:0" (click)="$event.stopPropagation()">
+                  <span style="flex:1;font-size:13px;font-weight:600;color:#0f172a">{{ svc }}</span>
+                  <span style="font-size:11px;color:#94a3b8">{{ isScopeBodyOpen(svc) ? '&#9650;' : '&#9660;' }}</span>
+                </button>
+                <div class="srp-scope-body" *ngIf="isScopeBodyOpen(svc)">
+                  <div class="srp-scope-desc">
+                    <strong>{{ svc }}</strong><br>
+                    The Consultant will be given authority as Lead Adviser to run a project(s) on a day-to-day basis on behalf of the client within constraints set by the client or the Project Board. The Consultant's prime responsibility is to use reasonable endeavours to ensure that projects are delivered to the required quality and specification within the specified constraints of time and cost.
+                  </div>
+                  <div style="overflow-x:auto">
+                    <table class="srp-table" style="margin-top:10px">
+                      <thead><tr>
+                        <th style="min-width:300px;text-align:left">Generally</th>
+                        <th style="width:80px;text-align:center">D&amp;B 1</th>
+                        <th style="width:80px;text-align:center">D&amp;B 2</th>
+                        <th style="width:80px;text-align:center">Traditional</th>
+                      </tr></thead>
+                      <tbody>
+                        <tr *ngFor="let item of scopeServiceItems; let i = index">
+                          <td style="font-size:12px;padding:5px 8px">{{ item }}</td>
+                          <!-- CSV: serv.Design_Build_Single_Stage / Design_Build_Two_Stage / Traditional
+                               eventChange="onSubSectionSelection(serv,secServ,currRow)"
+                               Bound to scopeSelections[svc].scopeItems[i].{db1,db2,trad} -->
+                          <td style="text-align:center">
+                            <input type="checkbox"
+                              [(ngModel)]="srp.scopeSelections[svc].scopeItems[i].db1"
+                              (ngModelChange)="onScopeItemChange(svc)"
+                              style="accent-color:var(--accent)">
+                          </td>
+                          <td style="text-align:center">
+                            <input type="checkbox"
+                              [(ngModel)]="srp.scopeSelections[svc].scopeItems[i].db2"
+                              (ngModelChange)="onScopeItemChange(svc)"
+                              style="accent-color:var(--accent)">
+                          </td>
+                          <td style="text-align:center">
+                            <input type="checkbox"
+                              [(ngModel)]="srp.scopeSelections[svc].scopeItems[i].trad"
+                              (ngModelChange)="onScopeItemChange(svc)"
+                              style="accent-color:var(--accent)">
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </ng-container>
+            <p *ngIf="!(opp?.services?.length)" class="srp-intro-text">No services defined on the opportunity.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           APPROVAL — Service Request Proposal Approval
+      ══════════════════════════════════════════════════════ -->
+      <section class="srp-stepper-card"
+        [class.srp-card-open]="isCardOpen('approval')"
+        [class.srp-card-done]="isSectionDone('approval')"
+        id="srp-card-approval" data-srp-section="approval">
+        <button class="srp-stepper-card-hdr" (click)="toggleCard('approval')"
+          [attr.aria-expanded]="isCardOpen('approval')" aria-controls="srp-cardbody-approval">
+          <span class="srp-stepper-card-num">{{ isSectionDone('approval') ? '✓' : '✓' }}</span>
+          <span class="srp-stepper-card-title">Service Request Proposal Approval</span>
+          <span class="srp-stepper-card-done-chip">&#10003; Done</span>
+          <span class="srp-stepper-chevron">&#8964;</span>
+        </button>
+        <div class="srp-stepper-card-body" id="srp-cardbody-approval" role="region">
+          <div class="srp-field-grid">
+            <div class="srp-row">
+              <div class="srp-label srp-mand">SRP/TO Delivery Method ✱</div>
+              <div class="srp-value">
+                <select class="srp-select" [(ngModel)]="srp.srpDeliveryMethod" (ngModelChange)="autoSave()">
+                  <option value="">Please Select</option>
+                  <option *ngFor="let d of deliveryMethods" [value]="d">{{ d }}</option>
+                </select>
+              </div>
+              <div class="srp-label srp-mand">Commercial Lead ✱</div>
+              <div class="srp-value">
+                <select class="srp-select" [(ngModel)]="srp.commercialLead" (ngModelChange)="autoSave()">
+                  <option value="">Please Select</option>
+                  <option *ngFor="let l of leads" [value]="l">{{ l }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="srp-row">
+              <div class="srp-label srp-mand">Sent for Approval ✱</div>
+              <div class="srp-value">
+                <div class="srp-yn">
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.status==='SentForApproval'||srp.status==='Approved'" disabled>Yes</button>
+                  <button class="srp-yn-btn" [class.srp-yn-active]="srp.status==='Draft'||srp.status==='Rejected'" disabled>No</button>
+                </div>
+              </div>
+            </div>
+            <div class="srp-row srp-row-full">
+              <div class="srp-label">Comments</div>
+              <div class="srp-value srp-full">
+                <!-- CSV: SRP_Approval_Comments — maxlength=3000 -->
+                <textarea class="srp-textarea" [(ngModel)]="srp.approvalComments"
+                  maxlength="3000" placeholder="Approval comments..." (ngModelChange)="autoSave()"></textarea>
+                <span class="srp-char-count">{{ charsLeft(srp.approvalComments, 3000) }} / 3000</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Approved state -->
+          <div *ngIf="srp.status === 'Approved'"
+            style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:14px;margin-top:12px">
+            <p style="font-size:13px;font-weight:700;color:#15803d">&#10003; SRP Approved</p>
+            <p style="font-size:12px;color:#64748b;margin-top:4px">
+              Approved by {{ srp.approvedBy }} on {{ srp.approvedAt | date:'dd MMM yyyy HH:mm' }}
+            </p>
+          </div>
+
+          <!-- Approval actions -->
+          <div *ngIf="srp.status === 'SentForApproval'"
+            style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0">
+            <button class="btn btn-success btn-sm" (click)="approve()">&#10003; Approve</button>
+            <button class="btn btn-danger btn-sm"  (click)="reject()">&#10007; Reject / Revise</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer bar -->
+      <div class="srp-footer-bar">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" style="accent-color:#2563eb"> Display Print View After Saving
+        </label>
+        <div style="flex:1"></div>
+        <a routerLink="/opportunities" class="btn btn-ghost btn-sm">&#8592; Back</a>
+        <button class="btn btn-primary btn-sm" (click)="saveDraft()">&#128190; Update</button>
+        <button class="btn btn-success btn-sm" *ngIf="srp.status==='SentForApproval'" (click)="approve()">&#10003; Approve</button>
+        <button class="btn btn-danger btn-sm"  *ngIf="srp.status==='SentForApproval'" (click)="reject()">&#10007; Reject</button>
+      </div>
+
+    </div><!-- /srp-stepper-content -->
+  </div><!-- /srp-stepper-shell -->
+</div><!-- /srp-shell -->
